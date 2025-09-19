@@ -6,6 +6,15 @@ import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaf
 import axios from "axios"
 import "./App.css"
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "./components/ui/dialog"
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL
 const API = `${BACKEND_URL}/api`
 
@@ -399,22 +408,16 @@ const Dashboard = () => {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <Link
-              to="/create-complaint"
-              className="bg-white text-yellow-600 px-4 py-3 sm:px-6 sm:py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors text-center text-sm sm:text-base"
-            >
-              🚨 Reportar Problema
-            </Link>
-            <Link
               to="/my-complaints"
               className="bg-gray-600 text-white px-4 py-3 sm:px-6 sm:py-3 rounded-lg font-semibold hover:bg-gray-700 transition-colors text-center text-sm sm:text-base"
             >
-              📋 Mis Quejas
+              📋 Mis Reportes
             </Link>
             <Link
               to="/track-complaints"
               className="bg-gray-600 text-white px-4 py-3 sm:px-6 sm:py-3 rounded-lg font-semibold hover:bg-gray-700 transition-colors text-center text-sm sm:text-base"
             >
-              🔍 Seguir Quejas
+              🔍 Seguir Reportes
             </Link>
           </div>
         </div>
@@ -424,30 +427,54 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 gap-6 mb-6 sm:mb-8">
             <div className="bg-white rounded-lg shadow p-6 sm:p-8 text-center">
               <div className="text-4xl sm:text-5xl font-bold text-yellow-600 mb-2">{stats.total_complaints}</div>
-              <div className="text-base sm:text-lg text-gray-600 font-medium">Total de Quejas Registradas</div>
+              <div className="text-base sm:text-lg text-gray-600 font-medium">Total de Reportes Registrados</div>
               <div className="text-xs sm:text-sm text-green-600 mt-2">En la plataforma ReporteBuenaventura</div>
             </div>
           </div>
         )}
 
-        {/* Categories Overview */}
+        {/* Categories and Entities Overview */}
         {stats && stats.by_category && Object.keys(stats.by_category).length > 0 && (
-          <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-            <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6 text-center">
-              📊 Quejas por Categoría
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-              {Object.entries(stats.by_category).map(([category, count]) => (
-                <div
-                  key={category}
-                  className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-yellow-50 to-green-50 rounded-lg border border-yellow-200"
-                >
-                  <span className="text-xs sm:text-sm font-medium text-gray-800">{category}</span>
-                  <span className="bg-yellow-500 text-white text-xs sm:text-sm font-bold px-2 py-1 sm:px-3 sm:py-1 rounded-full">
-                    {count}
-                  </span>
-                </div>
-              ))}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Categories */}
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6 text-center">
+                📊 Reportes por Categoría
+              </h3>
+              <div className="space-y-3">
+                {Object.entries(stats.by_category).map(([category, count]) => (
+                  <div
+                    key={category}
+                    className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200"
+                  >
+                    <span className="text-xs sm:text-sm font-medium text-gray-800">{category}</span>
+                    <span className="bg-yellow-500 text-white text-xs sm:text-sm font-bold px-2 py-1 sm:px-3 sm:py-1 rounded-full">
+                      {count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Entities */}
+            <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6 text-center">
+                🏛️ Reportes por Entidad
+              </h3>
+              <div className="space-y-3">
+                {stats.by_entity &&
+                  Object.entries(stats.by_entity).map(([entity, count]) => (
+                    <div
+                      key={entity}
+                      className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200"
+                    >
+                      <span className="text-xs sm:text-sm font-medium text-gray-800">{entity}</span>
+                      <span className="bg-green-500 text-white text-xs sm:text-sm font-bold px-2 py-1 sm:px-3 sm:py-1 rounded-full">
+                        {count}
+                      </span>
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
         )}
@@ -862,7 +889,113 @@ const CreateComplaint = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
+  // Entity redirect modal state
+  const [showEntityModal, setShowEntityModal] = useState(false)
+  const [assignedEntity, setAssignedEntity] = useState(null)
   const navigate = useNavigate()
+
+  const getEntityByCategory = (title, description) => {
+    const text = `${title} ${description}`.toLowerCase()
+
+    // Seguridad y orden público
+    if (
+      text.includes("robo") ||
+      text.includes("hurto") ||
+      text.includes("seguridad") ||
+      text.includes("delincuencia") ||
+      text.includes("violencia") ||
+      text.includes("emergencia")
+    ) {
+      return {
+        name: "Policía Nacional - Estación Buenaventura",
+        description: "Seguridad ciudadana, orden público y atención de emergencias",
+        contact: {
+          email: "denuncias.buenaventura@policia.gov.co",
+          phone: "123 (Línea de emergencia)",
+          address: "Carrera 1 # 4-20, Centro, Buenaventura",
+        },
+        website: "https://www.policia.gov.co/valle/buenaventura",
+      }
+    }
+
+    // Infraestructura y servicios públicos
+    if (
+      text.includes("alumbrado") ||
+      text.includes("luz") ||
+      text.includes("agua") ||
+      text.includes("alcantarilla") ||
+      text.includes("pavimento") ||
+      text.includes("vía") ||
+      text.includes("calle") ||
+      text.includes("carrera") ||
+      text.includes("infraestructura")
+    ) {
+      return {
+        name: "Secretaría de Infraestructura",
+        description: "Mantenimiento de vías, alumbrado público y servicios básicos",
+        contact: {
+          email: "infraestructura@buenaventura.gov.co",
+          phone: "+57 (2) 243-2100 Ext. 150",
+          address: "Calle 2 # 1A-08, Centro, Buenaventura",
+        },
+        website: "https://www.buenaventura.gov.co/secretarias/infraestructura",
+      }
+    }
+
+    // Medio ambiente y aseo
+    if (
+      text.includes("basura") ||
+      text.includes("residuos") ||
+      text.includes("aseo") ||
+      text.includes("contaminación") ||
+      text.includes("ambiente") ||
+      text.includes("limpieza")
+    ) {
+      return {
+        name: "Secretaría de Medio Ambiente",
+        description: "Gestión ambiental, manejo de residuos y saneamiento básico",
+        contact: {
+          email: "ambiente@buenaventura.gov.co",
+          phone: "+57 (2) 243-2100 Ext. 180",
+          address: "Calle 3 # 2-15, Centro, Buenaventura",
+        },
+        website: "https://www.buenaventura.gov.co/secretarias/ambiente",
+      }
+    }
+
+    // Salud pública
+    if (
+      text.includes("salud") ||
+      text.includes("hospital") ||
+      text.includes("médico") ||
+      text.includes("epidemia") ||
+      text.includes("enfermedad") ||
+      text.includes("sanitario")
+    ) {
+      return {
+        name: "Secretaría de Salud",
+        description: "Atención en salud pública y prevención de enfermedades",
+        contact: {
+          email: "salud@buenaventura.gov.co",
+          phone: "+57 (2) 243-2100 Ext. 120",
+          address: "Carrera 3 # 4-25, Centro, Buenaventura",
+        },
+        website: "https://www.buenaventura.gov.co/secretarias/salud",
+      }
+    }
+
+    // Default: Alcaldía Municipal
+    return {
+      name: "Alcaldía Municipal",
+      description: "Administración general y coordinación de servicios municipales",
+      contact: {
+        email: "contacto@buenaventura.gov.co",
+        phone: "+57 (2) 243-2100",
+        address: "Calle 1 # 1-40, Centro, Buenaventura",
+      },
+      website: "https://www.buenaventura.gov.co",
+    }
+  }
 
   const handleLocationSelect = (location) => {
     setFormData({ ...formData, location })
@@ -884,10 +1017,11 @@ const CreateComplaint = () => {
         description: formData.description,
         location: formData.location,
       })
+
+      const entity = getEntityByCategory(formData.title, formData.description)
+      setAssignedEntity(entity)
+      setShowEntityModal(true)
       setSuccess(true)
-      setTimeout(() => {
-        navigate("/my-complaints")
-      }, 2000)
     } catch (error) {
       setError("Error al crear la queja. Inténtalo de nuevo.")
     } finally {
@@ -895,14 +1029,26 @@ const CreateComplaint = () => {
     }
   }
 
-  if (success) {
+  // Handlers for the entity modal
+  const handleGoToEntity = () => {
+    window.open(assignedEntity.website, "_blank")
+    setShowEntityModal(false)
+    navigate("/my-complaints")
+  }
+
+  const handleCancel = () => {
+    setShowEntityModal(false)
+    navigate("/my-complaints")
+  }
+
+  if (success && !showEntityModal) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center">
           <div className="text-6xl text-green-600 mb-4">✅</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">¡Queja Registrada!</h2>
-          <p className="text-gray-600 mb-4">Tu queja ha sido enviada correctamente y está siendo procesada.</p>
-          <p className="text-sm text-gray-500">Serás redirigido a tus quejas...</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">¡Reporte Registrado!</h2>
+          <p className="text-gray-600 mb-4">Tu reporte ha sido enviado correctamente y está siendo procesado.</p>
+          <p className="text-sm text-gray-500">Serás redirigido a tus reportes...</p>
         </div>
       </div>
     )
@@ -919,7 +1065,7 @@ const CreateComplaint = () => {
             >
               ← Volver
             </Link>
-            <h1 className="text-xl font-semibold text-gray-900">📝 Nueva Queja</h1>
+            <h1 className="text-xl font-semibold text-gray-900">📝 Nuevo Reporte</h1>
             <div></div>
           </div>
         </div>
@@ -934,7 +1080,7 @@ const CreateComplaint = () => {
 
           <form onSubmit={handleSubmit} className="space-y-8">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Título de la Queja *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Título del Reporte *</label>
               <input
                 type="text"
                 required
@@ -957,13 +1103,26 @@ const CreateComplaint = () => {
                 placeholder="Describe detalladamente el problema: ¿qué está sucediendo?, ¿cuándo comenzó?, ¿cómo afecta a la comunidad?..."
               />
               <p className="text-xs text-gray-500 mt-1">
-                Proporciona todos los detalles posibles para una mejor atención
+                Proporciona todos los detalles posibles para una mejor clasificación y atención
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">Ubicación del Problema *</label>
               <LocationPicker onLocationSelect={handleLocationSelect} />
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-start">
+                  <div className="text-blue-600 mr-3 mt-1">🤖</div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-blue-800 mb-1">Clasificación Automática</h4>
+                    <p className="text-xs text-blue-700">
+                      Nuestro sistema analizará tu reporte y lo dirigirá automáticamente a la entidad competente
+                      (Secretaría de Infraestructura, Servicios Públicos, Policía, etc.) para una atención más rápida y
+                      eficiente.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {error && (
@@ -983,14 +1142,78 @@ const CreateComplaint = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 transition-colors"
               >
-                {loading ? "Enviando..." : "Enviar Queja"}
+                {loading ? "Enviando..." : "Enviar Reporte"}
               </button>
             </div>
           </form>
         </div>
       </div>
+
+      <Dialog open={showEntityModal} onOpenChange={setShowEntityModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-center">
+            <div className="mx-auto mb-4 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <span className="text-2xl">🏛️</span>
+            </div>
+            <DialogTitle className="text-xl font-bold text-gray-900">Redirigir a Entidad Competente</DialogTitle>
+            <DialogDescription className="text-gray-600 mt-2">
+              Tu reporte será enviado a la entidad responsable
+            </DialogDescription>
+          </DialogHeader>
+
+          {assignedEntity && (
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h3 className="font-semibold text-green-800 mb-2">{assignedEntity.name}</h3>
+                <p className="text-sm text-green-700 mb-3">{assignedEntity.description}</p>
+
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center text-gray-600">
+                    <span className="mr-2">📧</span>
+                    <span>{assignedEntity.contact.email}</span>
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <span className="mr-2">📞</span>
+                    <span>{assignedEntity.contact.phone}</span>
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <span className="mr-2">📍</span>
+                    <span>{assignedEntity.contact.address}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-800 mb-1">Tu Reporte:</h4>
+                <p className="text-sm text-blue-700 font-medium">{formData.title}</p>
+                <p className="text-xs text-blue-600 mt-1">
+                  Categoría:{" "}
+                  {formData.title.toLowerCase().includes("seguridad") || formData.title.toLowerCase().includes("robo")
+                    ? "Seguridad"
+                    : "Infraestructura"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleGoToEntity}
+              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+            >
+              Ir a {assignedEntity?.name}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
