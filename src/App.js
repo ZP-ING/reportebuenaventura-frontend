@@ -346,10 +346,13 @@ const Login = () => {
 const Dashboard = () => {
   const { user, logout } = useAuth()
   const [stats, setStats] = useState(null)
+  const [entityStats, setEntityStats] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [activeView, setActiveView] = useState("dashboard") // State to track active view for feedback logic
 
   useEffect(() => {
     fetchStats()
+    fetchEntityStats()
   }, [])
 
   const fetchStats = async () => {
@@ -360,6 +363,15 @@ const Dashboard = () => {
       console.error("Error fetching stats:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchEntityStats = async () => {
+    try {
+      const response = await axios.get(`${API}/complaints/stats/entities`)
+      setEntityStats(response.data)
+    } catch (error) {
+      console.error("Error fetching entity stats:", error)
     }
   }
 
@@ -389,7 +401,7 @@ const Dashboard = () => {
                 to="/create-complaint"
                 className="bg-gray-600 text-white px-3 py-2 sm:px-4 sm:py-2 text-sm rounded-md hover:bg-gray-700 transition-colors"
               >
-                📝 Nueva Queja
+                Nuevo Reporte
               </Link>
               <button onClick={logout} className="text-gray-600 hover:text-gray-800 text-sm px-2 py-1 sm:px-3 sm:py-2">
                 Cerrar Sesión
@@ -439,7 +451,7 @@ const Dashboard = () => {
             {/* Categories */}
             <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6 text-center">
-                📊 Reportes por Categoría
+                Reportes por Categoría
               </h3>
               <div className="space-y-3">
                 {Object.entries(stats.by_category).map(([category, count]) => (
@@ -459,11 +471,11 @@ const Dashboard = () => {
             {/* Entities */}
             <div className="bg-white rounded-lg shadow p-4 sm:p-6">
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4 sm:mb-6 text-center">
-                🏛️ Reportes por Entidad
+                Reportes por Entidad
               </h3>
               <div className="space-y-3">
-                {stats.by_entity &&
-                  Object.entries(stats.by_entity).map(([entity, count]) => (
+                {entityStats &&
+                  Object.entries(entityStats).map(([entity, count]) => (
                     <div
                       key={entity}
                       className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200"
@@ -513,14 +525,24 @@ const MyComplaints = () => {
   const { user } = useAuth()
   const [complaints, setComplaints] = useState([])
   const [loading, setLoading] = useState(true)
+  const [activeView, setActiveView] = useState("my-complaints") // State to track active view for feedback logic
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [selectedComplaintForFeedback, setSelectedComplaintForFeedback] = useState(null)
+  const [feedbackRating, setFeedbackRating] = useState(0)
+  const [feedbackComment, setFeedbackComment] = useState("")
 
   useEffect(() => {
-    fetchComplaints()
+    fetchMyComplaints()
   }, [])
 
-  const fetchComplaints = async () => {
+  const fetchMyComplaints = async () => {
+    setLoading(true)
     try {
-      const response = await axios.get(`${API}/complaints`)
+      const response = await axios.get(`${API}/complaints`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      })
       setComplaints(response.data)
     } catch (error) {
       console.error("Error fetching complaints:", error)
@@ -556,6 +578,114 @@ const MyComplaints = () => {
     return icons[status] || "📄"
   }
 
+  const handleFeedbackSubmit = async () => {
+    if (!selectedComplaintForFeedback || feedbackRating === 0) return
+
+    try {
+      await axios.put(
+        `${API}/complaints/${selectedComplaintForFeedback.id}/rating`,
+        {
+          rating: feedbackRating,
+          comment: feedbackComment,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        },
+      )
+
+      setShowFeedbackModal(false)
+      setFeedbackRating(0)
+      setFeedbackComment("")
+      setSelectedComplaintForFeedback(null)
+
+      // Refresh complaints
+      fetchMyComplaints()
+    } catch (error) {
+      console.error("Error submitting feedback:", error)
+    }
+  }
+
+  const openFeedbackModal = (complaint) => {
+    setSelectedComplaintForFeedback(complaint)
+    setFeedbackRating(complaint.rating || 0)
+    setFeedbackComment(complaint.rating_comment || "")
+    setShowFeedbackModal(true)
+  }
+
+  const renderComplaintCard = (complaint, showUserInfo = false) => (
+    <div key={complaint.id} className="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500">
+      <div className="flex justify-between items-start mb-3">
+        <h3 className="text-lg font-semibold text-gray-900">{complaint.title}</h3>
+        <span
+          className={`px-3 py-1 rounded-full text-sm font-medium ${
+            complaint.status === "resuelto"
+              ? "bg-green-100 text-green-800"
+              : complaint.status === "en_proceso"
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-gray-100 text-gray-800"
+          }`}
+        >
+          {complaint.status === "resuelto" ? "Resuelto" : complaint.status === "en_proceso" ? "En Proceso" : "Recibido"}
+        </span>
+      </div>
+
+      <p className="text-gray-600 mb-4">{complaint.description}</p>
+
+      <div className="space-y-2 text-sm text-gray-500">
+        <div className="flex items-center">
+          <span className="mr-2">Ubicación:</span>
+          <span>{complaint.location?.address || "Ubicación no especificada"}</span>
+        </div>
+        <div className="flex items-center">
+          <span className="mr-2">Categoría:</span>
+          <span>{complaint.category_name || "Sin categoría"}</span>
+        </div>
+        <div className="flex items-center">
+          <span className="mr-2">Entidad:</span>
+          <span>{complaint.responsible_entity || "Sin asignar"}</span>
+        </div>
+        {showUserInfo && (
+          <div className="flex items-center">
+            <span className="mr-2">Usuario:</span>
+            <span>{complaint.user_email}</span>
+          </div>
+        )}
+        <div className="flex items-center">
+          <span className="mr-2">Fecha:</span>
+          <span>{new Date(complaint.created_at).toLocaleDateString()}</span>
+        </div>
+
+        {complaint.rating && (
+          <div className="flex items-center">
+            <span className="mr-2">Calificación:</span>
+            <span>{complaint.rating}/5 estrellas</span>
+          </div>
+        )}
+      </div>
+
+      {complaint.status === "resuelto" && !complaint.rating && activeView === "my-complaints" && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <button
+            onClick={() => openFeedbackModal(complaint)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+          >
+            Calificar Atención
+          </button>
+        </div>
+      )}
+
+      {complaint.rating_comment && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <p className="text-sm text-gray-600">
+            <strong>Comentario:</strong> {complaint.rating_comment}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -579,7 +709,7 @@ const MyComplaints = () => {
             >
               ← Volver
             </Link>
-            <h1 className="text-xl font-semibold text-gray-900">📋 Mis Quejas</h1>
+            <h1 className="text-xl font-semibold text-gray-900">Mis Quejas</h1>
             <div></div>
           </div>
         </div>
@@ -605,49 +735,79 @@ const MyComplaints = () => {
                 </Link>
               </div>
             ) : (
-              complaints.map((complaint) => (
-                <div key={complaint.id} className="px-6 py-6 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center mb-2">
-                        <h3 className="text-lg font-medium text-gray-900 mr-3">{complaint.title}</h3>
-                        <span
-                          className={`px-3 py-1 text-sm font-medium rounded-full border ${getStatusBadge(complaint.status)}`}
-                        >
-                          {getStatusText(complaint.status)}
-                        </span>
-                      </div>
-                      <p className="text-gray-600 mb-3">{complaint.description}</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-500">
-                        <div className="flex items-center">
-                          <span className="mr-2">📍</span>
-                          <span>{complaint.location?.address}</span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="mr-2">🏢</span>
-                          <span>{complaint.responsible_entity}</span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="mr-2">📂</span>
-                          <span>{complaint.category_name}</span>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="mr-2">📅</span>
-                          <span>Creado: {new Date(complaint.created_at).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="ml-4 text-center">
-                      <div className="text-3xl mb-2">{getStatusIcon(complaint.status)}</div>
-                      <div className="text-xs text-gray-500">ID: {complaint.id.substring(0, 8)}</div>
-                    </div>
-                  </div>
-                </div>
-              ))
+              complaints.map((complaint) => renderComplaintCard(complaint, false))
             )}
           </div>
         </div>
       </div>
+
+      {/* Feedback Modal */}
+      <Dialog open={showFeedbackModal} onOpenChange={setShowFeedbackModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-center">
+            <div className="mx-auto mb-4 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <span className="text-2xl">⭐</span>
+            </div>
+            <DialogTitle className="text-xl font-bold text-gray-900">Calificar Atención</DialogTitle>
+            <DialogDescription className="text-gray-600 mt-2">
+              Ayúdanos a mejorar calificando la atención recibida
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedComplaintForFeedback && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-2">{selectedComplaintForFeedback.title}</h3>
+                <p className="text-sm text-gray-600">{selectedComplaintForFeedback.responsible_entity}</p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">Calificación (1-5 estrellas)</label>
+                <div className="flex space-x-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setFeedbackRating(star)}
+                      className={`text-2xl transition-colors ${
+                        star <= feedbackRating ? "text-yellow-400" : "text-gray-300"
+                      }`}
+                    >
+                      ⭐
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Comentario (opcional)</label>
+                <textarea
+                  value={feedbackComment}
+                  onChange={(e) => setFeedbackComment(e.target.value)}
+                  placeholder="Comparte tu experiencia con la atención recibida..."
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+            <button
+              onClick={() => setShowFeedbackModal(false)}
+              className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleFeedbackSubmit}
+              disabled={feedbackRating === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              Enviar Calificación
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -657,12 +817,18 @@ const TrackComplaints = () => {
   const [complaints, setComplaints] = useState([])
   const [selectedComplaint, setSelectedComplaint] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [activeView, setActiveView] = useState("follow-complaints") // State to track active view for feedback logic
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [selectedComplaintForFeedback, setSelectedComplaintForFeedback] = useState(null)
+  const [feedbackRating, setFeedbackRating] = useState(0)
+  const [feedbackComment, setFeedbackComment] = useState("")
 
   useEffect(() => {
     fetchAllComplaints()
   }, [])
 
   const fetchAllComplaints = async () => {
+    setLoading(true)
     try {
       const response = await axios.get(`${API}/complaints/all`)
       setComplaints(response.data)
@@ -690,6 +856,114 @@ const TrackComplaints = () => {
     }
     return texts[status] || status
   }
+
+  const handleFeedbackSubmit = async () => {
+    if (!selectedComplaintForFeedback || feedbackRating === 0) return
+
+    try {
+      await axios.put(
+        `${API}/complaints/${selectedComplaintForFeedback.id}/rating`,
+        {
+          rating: feedbackRating,
+          comment: feedbackComment,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        },
+      )
+
+      setShowFeedbackModal(false)
+      setFeedbackRating(0)
+      setFeedbackComment("")
+      setSelectedComplaintForFeedback(null)
+
+      // Refresh complaints
+      fetchAllComplaints()
+    } catch (error) {
+      console.error("Error submitting feedback:", error)
+    }
+  }
+
+  const openFeedbackModal = (complaint) => {
+    setSelectedComplaintForFeedback(complaint)
+    setFeedbackRating(complaint.rating || 0)
+    setFeedbackComment(complaint.rating_comment || "")
+    setShowFeedbackModal(true)
+  }
+
+  const renderComplaintCard = (complaint, showUserInfo = false) => (
+    <div key={complaint.id} className="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500">
+      <div className="flex justify-between items-start mb-3">
+        <h3 className="text-lg font-semibold text-gray-900">{complaint.title}</h3>
+        <span
+          className={`px-3 py-1 rounded-full text-sm font-medium ${
+            complaint.status === "resuelto"
+              ? "bg-green-100 text-green-800"
+              : complaint.status === "en_proceso"
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-gray-100 text-gray-800"
+          }`}
+        >
+          {complaint.status === "resuelto" ? "Resuelto" : complaint.status === "en_proceso" ? "En Proceso" : "Recibido"}
+        </span>
+      </div>
+
+      <p className="text-gray-600 mb-4">{complaint.description}</p>
+
+      <div className="space-y-2 text-sm text-gray-500">
+        <div className="flex items-center">
+          <span className="mr-2">📍</span>
+          <span>{complaint.location?.address || "Ubicación no especificada"}</span>
+        </div>
+        <div className="flex items-center">
+          <span className="mr-2">📂</span>
+          <span>{complaint.category_name || "Sin categoría"}</span>
+        </div>
+        <div className="flex items-center">
+          <span className="mr-2">🏛️</span>
+          <span>{complaint.responsible_entity || "Sin asignar"}</span>
+        </div>
+        {showUserInfo && (
+          <div className="flex items-center">
+            <span className="mr-2">👤</span>
+            <span>{complaint.user_email}</span>
+          </div>
+        )}
+        <div className="flex items-center">
+          <span className="mr-2">📅</span>
+          <span>{new Date(complaint.created_at).toLocaleDateString()}</span>
+        </div>
+
+        {complaint.rating && (
+          <div className="flex items-center">
+            <span className="mr-2">⭐</span>
+            <span>Calificación: {complaint.rating}/5 estrellas</span>
+          </div>
+        )}
+      </div>
+
+      {complaint.status === "resuelto" && !complaint.rating && activeView === "follow-complaints" && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <button
+            onClick={() => openFeedbackModal(complaint)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+          >
+            Calificar Atención
+          </button>
+        </div>
+      )}
+
+      {complaint.rating_comment && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <p className="text-sm text-gray-600">
+            <strong>Comentario:</strong> {complaint.rating_comment}
+          </p>
+        </div>
+      )}
+    </div>
+  )
 
   if (loading) {
     return (
@@ -812,7 +1086,7 @@ const TrackComplaints = () => {
             >
               ← Volver
             </Link>
-            <h1 className="text-xl font-semibold text-gray-900">🔍 Seguir Quejas</h1>
+            <h1 className="text-xl font-semibold text-gray-900">Seguir Quejas</h1>
             <div></div>
           </div>
         </div>
@@ -851,15 +1125,15 @@ const TrackComplaints = () => {
                       <p className="text-gray-600 mb-3 line-clamp-2">{complaint.description}</p>
                       <div className="flex flex-wrap gap-4 text-sm text-gray-500">
                         <div className="flex items-center">
-                          <span className="mr-2">📍</span>
+                          <span className="mr-2">Ubicación:</span>
                           <span className="truncate">{complaint.location?.address}</span>
                         </div>
                         <div className="flex items-center">
-                          <span className="mr-2">📂</span>
+                          <span className="mr-2">Categoría:</span>
                           <span>{complaint.category_name}</span>
                         </div>
                         <div className="flex items-center">
-                          <span className="mr-2">📅</span>
+                          <span className="mr-2">Fecha:</span>
                           <span>{new Date(complaint.created_at).toLocaleDateString()}</span>
                         </div>
                       </div>
@@ -875,6 +1149,74 @@ const TrackComplaints = () => {
           </div>
         </div>
       </div>
+
+      {/* Feedback Modal */}
+      <Dialog open={showFeedbackModal} onOpenChange={setShowFeedbackModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-center">
+            <div className="mx-auto mb-4 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <span className="text-2xl">⭐</span>
+            </div>
+            <DialogTitle className="text-xl font-bold text-gray-900">Calificar Atención</DialogTitle>
+            <DialogDescription className="text-gray-600 mt-2">
+              Ayúdanos a mejorar calificando la atención recibida
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedComplaintForFeedback && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-2">{selectedComplaintForFeedback.title}</h3>
+                <p className="text-sm text-gray-600">{selectedComplaintForFeedback.responsible_entity}</p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">Calificación (1-5 estrellas)</label>
+                <div className="flex space-x-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setFeedbackRating(star)}
+                      className={`text-2xl transition-colors ${
+                        star <= feedbackRating ? "text-yellow-400" : "text-gray-300"
+                      }`}
+                    >
+                      ⭐
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Comentario (opcional)</label>
+                <textarea
+                  value={feedbackComment}
+                  onChange={(e) => setFeedbackComment(e.target.value)}
+                  placeholder="Comparte tu experiencia con la atención recibida..."
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+            <button
+              onClick={() => setShowFeedbackModal(false)}
+              className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleFeedbackSubmit}
+              disabled={feedbackRating === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              Enviar Calificación
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1112,7 +1454,7 @@ const CreateComplaint = () => {
               <LocationPicker onLocationSelect={handleLocationSelect} />
               <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="flex items-start">
-                  <div className="text-blue-600 mr-3 mt-1">🤖</div>
+                  <div className="text-blue-600 mr-3 mt-1">Clasificación Automática</div>
                   <div>
                     <h4 className="text-sm font-semibold text-blue-800 mb-1">Clasificación Automática</h4>
                     <p className="text-xs text-blue-700">
@@ -1127,7 +1469,7 @@ const CreateComplaint = () => {
 
             {error && (
               <div className="text-red-600 text-sm bg-red-50 p-4 rounded-lg border border-red-200 flex items-center">
-                <span className="mr-2">⚠️</span>
+                <span className="mr-2">Error:</span>
                 {error}
               </div>
             )}
@@ -1155,7 +1497,7 @@ const CreateComplaint = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="text-center">
             <div className="mx-auto mb-4 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <span className="text-2xl">🏛️</span>
+              <span className="text-2xl">Entidad</span>
             </div>
             <DialogTitle className="text-xl font-bold text-gray-900">Redirigir a Entidad Competente</DialogTitle>
             <DialogDescription className="text-gray-600 mt-2">
@@ -1171,15 +1513,15 @@ const CreateComplaint = () => {
 
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center text-gray-600">
-                    <span className="mr-2">📧</span>
+                    <span className="mr-2">Email:</span>
                     <span>{assignedEntity.contact.email}</span>
                   </div>
                   <div className="flex items-center text-gray-600">
-                    <span className="mr-2">📞</span>
+                    <span className="mr-2">Teléfono:</span>
                     <span>{assignedEntity.contact.phone}</span>
                   </div>
                   <div className="flex items-center text-gray-600">
-                    <span className="mr-2">📍</span>
+                    <span className="mr-2">Dirección:</span>
                     <span>{assignedEntity.contact.address}</span>
                   </div>
                 </div>
