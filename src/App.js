@@ -208,25 +208,29 @@ const Login = () => {
     full_name: "",
   })
   const [loading, setLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, register } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
 
-    try {
-      const endpoint = isLogin ? "/auth/login" : "/auth/register"
-      const response = await axios.post(`${API}${endpoint}`, formData)
+    const { email, password, full_name } = formData
+    let result
 
-      if (response.data.access_token) {
-        login(response.data.access_token, response.data.user)
-      }
-    } catch (error) {
-      alert(error.response?.data?.detail || "Error en la operación")
-    } finally {
-      setLoading(false)
+    if (isLogin) {
+      result = await login(email, password)
+    } else {
+      result = await register(email, password, full_name)
     }
+
+    if (result.success) {
+      navigate("/dashboard")
+    } else {
+      alert(result.error)
+    }
+
+    setLoading(false)
   }
 
   const handleGoogleLogin = () => {
